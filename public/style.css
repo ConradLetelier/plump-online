@@ -1,0 +1,125 @@
+/* Global layout */
+body {
+  margin: 0;
+  padding: 0;
+  background: #0b1724;
+  color: #f5f5f5;
+  font-family: "Segoe UI", Roboto, sans-serif;
+}
+
+#app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 14px;
+  margin: 4px;
+  border: none;
+  border-radius: 6px;
+  background: #1e88e5;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn:hover {
+  background: #1565c0;
+}
+
+.btn:disabled {
+  background: #555;
+  cursor: default;
+}
+
+/* Inputs */
+input {
+  padding: 6px 8px;
+  margin: 4px;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background: #111827;
+  color: #fff;
+}
+
+/* Player list */
+.player-list {
+  margin-top: 12px;
+  padding: 10px;
+  background: #111827;
+  border-radius: 6px;
+}
+
+.player {
+  padding: 4px 0;
+  border-bottom: 1px solid #222;
+}
+
+.player:last-child {
+  border-bottom: none;
+}
+
+/* Highlight current player */
+.highlight {
+  font-weight: bold;
+  color: #ffeb3b;
+}
+
+/* Cards */
+.card {
+  display: inline-block;
+  padding: 8px 12px;
+  margin: 4px;
+  border-radius: 6px;
+  background: #fff;
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  transition: transform 0.1s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+}
+
+.card.heart,
+.card.diamond {
+  color: #c00;
+}
+
+/* Trick display */
+.trick {
+  margin-top: 12px;
+  padding: 12px;
+  background: #111827;
+  border-radius: 6px;
+  border: 1px solid #222;
+}
+
+/* Sections */
+#biddingView,
+#playView,
+#roundInfo,
+#scoreBoard {
+  margin-top: 16px;
+  padding: 12px;
+  background: #111827;
+  border-radius: 6px;
+  border: 1px solid #222;
+}
+
+/* Headings */
+h1, h2, h3 {
+  margin-top: 0;
+  color: #fff;
+}
+
+/* Error text */
+#error, #connError {
+  color: #ff5252;
+  margin-top: 8px;
+}
