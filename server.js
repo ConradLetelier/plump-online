@@ -3,8 +3,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 
-// -------------------- SERVER SETUP --------------------
-
 const app = express();
 const server = http.createServer(app);
 
@@ -16,9 +14,7 @@ const io = new Server(server, {
   }
 });
 
-// Serve client files
 app.use(express.static(path.join(__dirname, "public")));
-
 
 // -------------------- GAME LOGIC --------------------
 
@@ -48,6 +44,12 @@ function cardValue(card) {
 
 function cardToString(card) {
   return card.rank + card.suit;
+}
+
+function stringToCard(str) {
+  const suit = str.slice(-1);
+  const rank = str.slice(0, -1);
+  return { suit, rank };
 }
 
 function winnerOfTrick(trickCards, leadSuit) {
@@ -189,24 +191,40 @@ function publicGameState(lobby) {
     currentTrick: lobby.currentTrick.map(t => ({
       playerIndex: t.playerIndex,
       card: cardToString(t.card)
-    }))
+    })),
+    leadSuit: lobby.leadSuit
   };
 }
 
-function startRound(lobby) {
-  lobby.state = "bidding";
-  dealRound(lobby);
-  io.to(lobby.id).emit("gameState", publicGameState(lobby));
-  // Skicka privata händer till varje spelare
+function sendHands(lobby) {
   for (let i = 0; i < lobby.players.length; i++) {
     const p = lobby.players[i];
     io.to(p.id).emit("yourHand", {
       hand: p.hand.map(cardToString)
     });
   }
-
 }
 
+function startRound(lobby) {
+  lobby.state = "bidding";
+  dealRound(lobby);
+  io.to(lobby.id).emit("gameState", publicGameState(lobby));
+  sendHands(lobby);
+}
+
+function endRound(lobby) {
+  computeScoresForRound(lobby);
+  lobby.roundIndex++;
+
+  if (lobby.roundIndex >= lobby.roundCardCounts.length) {
+    lobby.state = "finished";
+    io.to(lobby.id).emit("gameState", publicGameState(lobby));
+    return;
+  }
+
+  lobby.dealerIndex = nextPlayerIndex(lobby, lobby.dealerIndex);
+  startRound(lobby);
+}
 
 // -------------------- SOCKET.IO EVENTS --------------------
 
@@ -264,55 +282,93 @@ io.on("connection", (socket) => {
     startRound(lobby);
   });
 
-socket.on("placeBid", (bid, cb) => {
-  const lobby = getLobbyByPlayer(socket.id);
-  if (!lobby || lobby.state !== "bidding") return;
+  socket.on("placeBid", (bid, cb) => {
+    const lobby = getLobbyByPlayer(socket.id);
+    if (!lobby || lobby.state !== "bidding") return;
 
-  const player = lobby.players.find(p => p.id === socket.id);
-  if (!player) return;
+    const player = lobby.players.find(p => p.id === socket.id);
+    if (!player) return;
 
-  const cards = cardsThisRound(lobby);
-  bid = Number(bid);
+    const cards = cardsThisRound(lobby);
+    bid = Number(bid);
 
-  if (isNaN(bid) || bid < 0 || bid > cards)
-    return cb({ ok: false, error: "Ogiltigt bud" });
+    if (isNaN(bid) || bid < 0 || bid > cards)
+      return cb({ ok: false, error: "Ogiltigt bud" });
 
-  player.bid = bid;
+    player.bid = bid;
 
-  // Alla har lagt bud?
-  if (allBidsPlaced(lobby)) {
-    const total = totalBids(lobby);
-    const tricks = cardsThisRound(lobby);
+    if (allBidsPlaced(lobby)) {
+      const total = totalBids(lobby);
+      const tricks = cardsThisRound(lobby);
 
-    // Justera dealer om totalen matchar antalet stick
-    if (total === tricks) {
-      const dealer = lobby.players[lobby.dealerIndex];
-      if (dealer.bid < tricks) dealer.bid++;
-      else dealer.bid--;
+      if (total === tricks) {
+        const dealer = lobby.players[lobby.dealerIndex];
+        if (dealer.bid < tricks) dealer.bid++;
+        else dealer.bid--;
+      }
+
+      lobby.state = "playing";
+      lobby.currentPlayerIndex = nextPlayerIndex(lobby, lobby.dealerIndex);
+      io.to(lobby.id).emit("gameState", publicGameState(lobby));
+    } else {
+      io.to(lobby.id).emit("gameState", publicGameState(lobby));
     }
 
-    // Starta spelrundan
-    lobby.state = "playing";
-
-    // Första spelaren är den efter dealern
-    lobby.currentPlayerIndex = nextPlayerIndex(lobby, lobby.dealerIndex);
-
-    // Skicka uppdaterad state
-    io.to(lobby.id).emit("gameState", publicGameState(lobby));
-  } else {
-    // Bara uppdatera state under budgivning
-    io.to(lobby.id).emit("gameState", publicGameState(lobby));
-  }
-
-  cb({ ok: true });
-});
-
+    cb({ ok: true });
+  });
 
   socket.on("playCard", (cardStr, cb) => {
     const lobby = getLobbyByPlayer(socket.id);
     if (!lobby || lobby.state !== "playing") return;
 
-    cb({ ok: false, error: "Clienten skickar inga riktiga kort ännu" });
+    const playerIndex = lobby.players.findIndex(p => p.id === socket.id);
+    if (playerIndex !== lobby.currentPlayerIndex)
+      return cb({ ok: false, error: "Det är inte din tur." });
+
+    const player = lobby.players[playerIndex];
+    const card = stringToCard(cardStr);
+
+    const handIndex = player.hand.findIndex(
+      c => c.suit === card.suit && c.rank === card.rank
+    );
+    if (handIndex === -1)
+      return cb({ ok: false, error: "Kortet finns inte i din hand." });
+
+    player.hand.splice(handIndex, 1);
+
+    if (lobby.currentTrick.length === 0) {
+      lobby.leadSuit = card.suit;
+    }
+
+    lobby.currentTrick.push({ playerIndex, card });
+
+    if (lobby.currentTrick.length === lobby.players.length) {
+      const winnerOffset = winnerOfTrick(
+        lobby.currentTrick.map(t => t.card),
+        lobby.leadSuit
+      );
+
+      const winnerIndex = lobby.currentTrick[winnerOffset].playerIndex;
+      lobby.players[winnerIndex].tricksThisRound++;
+
+      lobby.tricksPlayedThisRound++;
+      lobby.currentTrick = [];
+      lobby.leadSuit = null;
+      lobby.currentPlayerIndex = winnerIndex;
+
+      if (lobby.tricksPlayedThisRound >= cardsThisRound(lobby)) {
+        endRound(lobby);
+      } else {
+        io.to(lobby.id).emit("gameState", publicGameState(lobby));
+        sendHands(lobby);
+      }
+    } else {
+      lobby.currentPlayerIndex = nextPlayerIndex(lobby, lobby.currentPlayerIndex);
+      io.to(lobby.id).emit("gameState", publicGameState(lobby));
+      sendHands(lobby);
+    }
+
+    cb({ ok: true });
   });
 
   socket.on("disconnect", () => {
@@ -325,9 +381,6 @@ socket.on("placeBid", (bid, cb) => {
     io.to(lobby.id).emit("lobbyUpdate", publicLobbyState(lobby));
   });
 });
-
-
-// -------------------- START SERVER --------------------
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
