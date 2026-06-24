@@ -1,5 +1,8 @@
 // client.js
-const socket = io();
+const socket = io("https://plump-online-production.up.railway.app", {
+  transports: ["websocket"]
+});
+
 
 let myId = null;
 let lobbyState = null;
