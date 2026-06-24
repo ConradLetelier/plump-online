@@ -123,3 +123,10 @@ h1, h2, h3 {
   color: #ff5252;
   margin-top: 8px;
 }
+
+#hand {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
