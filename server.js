@@ -264,37 +264,49 @@ io.on("connection", (socket) => {
     startRound(lobby);
   });
 
-  socket.on("placeBid", (bid, cb) => {
-    const lobby = getLobbyByPlayer(socket.id);
-    if (!lobby || lobby.state !== "bidding") return;
+socket.on("placeBid", (bid, cb) => {
+  const lobby = getLobbyByPlayer(socket.id);
+  if (!lobby || lobby.state !== "bidding") return;
 
-    const player = lobby.players.find(p => p.id === socket.id);
-    if (!player) return;
+  const player = lobby.players.find(p => p.id === socket.id);
+  if (!player) return;
 
-    const cards = cardsThisRound(lobby);
-    bid = Number(bid);
+  const cards = cardsThisRound(lobby);
+  bid = Number(bid);
 
-    if (isNaN(bid) || bid < 0 || bid > cards)
-      return cb({ ok: false, error: "Ogiltigt bud" });
+  if (isNaN(bid) || bid < 0 || bid > cards)
+    return cb({ ok: false, error: "Ogiltigt bud" });
 
-    player.bid = bid;
+  player.bid = bid;
 
-    if (allBidsPlaced(lobby)) {
-      const total = totalBids(lobby);
-      const tricks = cardsThisRound(lobby);
+  // Alla har lagt bud?
+  if (allBidsPlaced(lobby)) {
+    const total = totalBids(lobby);
+    const tricks = cardsThisRound(lobby);
 
-      if (total === tricks) {
-        const dealer = lobby.players[lobby.dealerIndex];
-        if (dealer.bid < tricks) dealer.bid++;
-        else dealer.bid--;
-      }
-
-      lobby.state = "playing";
+    // Justera dealer om totalen matchar antalet stick
+    if (total === tricks) {
+      const dealer = lobby.players[lobby.dealerIndex];
+      if (dealer.bid < tricks) dealer.bid++;
+      else dealer.bid--;
     }
 
+    // Starta spelrundan
+    lobby.state = "playing";
+
+    // Första spelaren är den efter dealern
+    lobby.currentPlayerIndex = nextPlayerIndex(lobby, lobby.dealerIndex);
+
+    // Skicka uppdaterad state
     io.to(lobby.id).emit("gameState", publicGameState(lobby));
-    cb({ ok: true });
-  });
+  } else {
+    // Bara uppdatera state under budgivning
+    io.to(lobby.id).emit("gameState", publicGameState(lobby));
+  }
+
+  cb({ ok: true });
+});
+
 
   socket.on("playCard", (cardStr, cb) => {
     const lobby = getLobbyByPlayer(socket.id);
