@@ -197,6 +197,14 @@ function startRound(lobby) {
   lobby.state = "bidding";
   dealRound(lobby);
   io.to(lobby.id).emit("gameState", publicGameState(lobby));
+  // Skicka privata händer till varje spelare
+  for (let i = 0; i < lobby.players.length; i++) {
+    const p = lobby.players[i];
+    io.to(p.id).emit("yourHand", {
+      hand: p.hand.map(cardToString)
+    });
+  }
+
 }
 
 
