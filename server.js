@@ -285,39 +285,75 @@ io.on("connection", (socket) => {
   socket.on("placeBid", (bid, cb) => {
     const lobby = getLobbyByPlayer(socket.id);
     if (!lobby || lobby.state !== "bidding") return;
-
+  
     const player = lobby.players.find(p => p.id === socket.id);
     if (!player) return;
-
+  
     const cards = cardsThisRound(lobby);
     bid = Number(bid);
-
+  
     if (isNaN(bid) || bid < 0 || bid > cards)
       return cb({ ok: false, error: "Ogiltigt bud" });
-
+  
     player.bid = bid;
-
+  
+    // -----------------------------
+    // Alla bud lagda?
+    // -----------------------------
     if (allBidsPlaced(lobby)) {
+  
       const total = totalBids(lobby);
       const tricks = cardsThisRound(lobby);
-
+  
+      // Justera dealer om totalen matchar antalet stick
       if (total === tricks) {
         const dealer = lobby.players[lobby.dealerIndex];
         if (dealer.bid < tricks) dealer.bid++;
         else dealer.bid--;
       }
-
+  
+      // -----------------------------
+      // Vem börjar spela?
+      // -----------------------------
+      const bids = lobby.players.map(p => p.bid);
+      const maxBid = Math.max(...bids);
+      const allEqual = bids.every(b => b === bids[0]);
+  
+      if (allEqual) {
+        // Alla bjöd lika → rotera startspelaren
+        lobby.currentPlayerIndex = (lobby.roundIndex % lobby.players.length);
+      } else {
+        // Högsta bud börjar
+        lobby.currentPlayerIndex = bids.indexOf(maxBid);
+      }
+  
       lobby.state = "playing";
-      lobby.currentPlayerIndex = nextPlayerIndex(lobby, lobby.dealerIndex);
+  
+      // Skicka state
       io.to(lobby.id).emit("gameState", publicGameState(lobby));
-    } else {
-      io.to(lobby.id).emit("gameState", publicGameState(lobby));
+      return cb({ ok: true });
     }
-
+  
+    // -----------------------------
+    // Om inte alla bud lagda → bara uppdatera state
+    // -----------------------------
+    io.to(lobby.id).emit("gameState", publicGameState(lobby));
     cb({ ok: true });
   });
 
+
   socket.on("playCard", (cardStr, cb) => {
+    // Om inte första kortet i sticket: kontrollera färg
+    if (lobby.currentTrick.length > 0) {
+      const leadSuit = lobby.leadSuit;
+    
+      const hasLeadSuit = player.hand.some(c => c.suit === leadSuit);
+    
+      if (hasLeadSuit && card.suit !== leadSuit) {
+        return cb({ ok: false, error: "Du måste följa färg." });
+      }
+    }
+
     const lobby = getLobbyByPlayer(socket.id);
     if (!lobby || lobby.state !== "playing") return;
 
