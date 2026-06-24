@@ -1,13 +1,7 @@
-// ------------------------------------------------------
-// SOCKET.IO CONNECTION
-// ------------------------------------------------------
 const socket = io("https://plump-online-production.up.railway.app", {
   transports: ["websocket"]
 });
 
-// ------------------------------------------------------
-// DOM ELEMENTS
-// ------------------------------------------------------
 const connectionView = document.getElementById("connectionView");
 const lobbyView = document.getElementById("lobbyView");
 const gameView = document.getElementById("gameView");
@@ -34,11 +28,10 @@ const scoreBoard = document.getElementById("scoreBoard");
 const handDiv = document.createElement("div");
 handDiv.id = "hand";
 handDiv.className = "hand";
-document.getElementById("gameView").prepend(handDiv);
+gameView.prepend(handDiv);
 
-// ------------------------------------------------------
-// BUTTON HANDLERS
-// ------------------------------------------------------
+let latestGameState = null;
+
 createLobbyBtn.onclick = () => {
   const name = nameInput.value.trim();
   const maxPlayers = Number(maxPlayersInput.value);
@@ -68,20 +61,12 @@ startGameBtn.onclick = () => {
   socket.emit("startGame");
 };
 
-// ------------------------------------------------------
-// VIEW SWITCHING
-// ------------------------------------------------------
 function enterLobby(lobbyId) {
   connectionView.style.display = "none";
   lobbyView.style.display = "block";
   lobbyIdLabel.textContent = lobbyId;
 }
 
-// ------------------------------------------------------
-// SOCKET EVENTS
-// ------------------------------------------------------
-
-// LOBBY UPDATE
 socket.on("lobbyUpdate", (state) => {
   playerList.innerHTML = "";
   state.players.forEach(p => {
@@ -92,18 +77,22 @@ socket.on("lobbyUpdate", (state) => {
   });
 });
 
-// GAME STATE UPDATE
 socket.on("gameState", (state) => {
+  latestGameState = state;
+
   lobbyView.style.display = "none";
   gameView.style.display = "block";
 
   gameLobbyIdLabel.textContent = state.lobbyId;
 
-  gameStatus.textContent = `Runda ${state.roundIndex + 1} / ${state.totalRounds}`;
+  if (state.state === "finished") {
+    gameStatus.textContent = "Spelet är slut!";
+  } else {
+    gameStatus.textContent = `Runda ${state.roundIndex + 1} / ${state.totalRounds}`;
+  }
 
   roundInfo.textContent = `Antal kort denna runda: ${state.cardsThisRound}`;
 
-  // Visa budgivning
   if (state.state === "bidding") {
     biddingView.innerHTML = `
       <h3>Budgivning</h3>
@@ -122,16 +111,34 @@ socket.on("gameState", (state) => {
     biddingView.innerHTML = "";
   }
 
-  // Scoreboard
+  playView.innerHTML = "";
+  if (state.state === "playing") {
+    const currentPlayer = state.players[state.currentPlayerIndex];
+    playView.innerHTML = `
+      <h3>Spel</h3>
+      <p>Tur: ${currentPlayer.name}</p>
+    `;
+
+    if (state.currentTrick.length > 0) {
+      const trickDiv = document.createElement("div");
+      trickDiv.className = "trick";
+      trickDiv.innerHTML = "<strong>Pågående stick:</strong><br>";
+      state.currentTrick.forEach(t => {
+        const p = state.players[t.playerIndex];
+        trickDiv.innerHTML += `${p.name}: ${t.card}<br>`;
+      });
+      playView.appendChild(trickDiv);
+    }
+  }
+
   scoreBoard.innerHTML = "<h3>Poäng</h3>";
   state.players.forEach(p => {
     const div = document.createElement("div");
-    div.textContent = `${p.name}: ${p.score}p`;
+    div.textContent = `${p.name}: ${p.score}p (bud: ${p.bid ?? "-"}, stick: ${p.tricksThisRound})`;
     scoreBoard.appendChild(div);
   });
 });
 
-// RECEIVE PRIVATE HAND
 socket.on("yourHand", ({ hand }) => {
   handDiv.innerHTML = "";
 
@@ -144,6 +151,25 @@ socket.on("yourHand", ({ hand }) => {
     }
 
     div.textContent = card;
+
+    div.onclick = () => {
+      if (!latestGameState) return;
+      if (latestGameState.state !== "playing") return;
+
+      const me = latestGameState.players.find(p => p.id === socket.id);
+      if (!me) return;
+
+      const myIndex = latestGameState.players.indexOf(me);
+      if (myIndex !== latestGameState.currentPlayerIndex) {
+        alert("Det är inte din tur.");
+        return;
+      }
+
+      socket.emit("playCard", card, (res) => {
+        if (!res.ok) alert(res.error);
+      });
+    };
+
     handDiv.appendChild(div);
   });
 
